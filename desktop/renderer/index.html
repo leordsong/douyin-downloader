@@ -86,6 +86,8 @@
       <form class="row tight" id="addForm">
         <input type="text" id="linkInput" placeholder="粘贴直播间链接：https://live.douyin.com/123456、douyin.com/follow/live/123456，或主播主页 douyin.com/user/…（也可直接填房间号）"
                spellcheck="false" autocomplete="off" />
+        <input type="text" id="noteInput" class="note-input" placeholder="备注（可选）" maxlength="100"
+               spellcheck="false" autocomplete="off" />
         <button type="submit" class="btn primary">添加</button>
       </form>
       <p class="muted small" id="addError"></p>
@@ -98,13 +100,15 @@
     <li class="link-row">
       <span class="dot"></span>
       <div class="link-main">
-        <div class="link-url"></div>
+        <div class="link-title"></div>
+        <div class="link-url muted small hidden"></div>
         <div class="link-detail muted small"></div>
         <pre class="logbox small hidden"></pre>
       </div>
       <div class="link-actions">
         <span class="state-label"></span>
         <button class="btn small act-toggle">开始</button>
+        <button class="btn small ghost act-note" title="修改备注">备注</button>
         <button class="btn small ghost act-log">日志</button>
         <button class="btn small ghost danger act-remove">删除</button>
       </div>

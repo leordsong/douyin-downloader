@@ -27,8 +27,9 @@ contextBridge.exposeInMainWorld('api', {
   loginCancel: () => ipcRenderer.invoke('login:cancel'),
   depsInstall: () => ipcRenderer.invoke('deps:install'),
 
-  linksAdd: (url) => ipcRenderer.invoke('links:add', url),
+  linksAdd: (url, note) => ipcRenderer.invoke('links:add', url, note),
   linksRemove: (linkId) => ipcRenderer.invoke('links:remove', linkId),
+  linksSetNote: (linkId, note) => ipcRenderer.invoke('links:setNote', linkId, note),
 
   monitorStart: (linkId) => ipcRenderer.invoke('monitor:start', linkId),
   monitorStop: (linkId) => ipcRenderer.invoke('monitor:stop', linkId),

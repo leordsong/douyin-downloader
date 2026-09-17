@@ -490,7 +490,7 @@ function registerIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle('links:add', (_e, rawUrl) => {
+  ipcMain.handle('links:add', (_e, rawUrl, rawNote) => {
     const url = normalizeLiveUrl(String(rawUrl || '').trim());
     if (!url) {
       return { ok: false, error: '链接格式不正确。支持 live.douyin.com/{房间号}、douyin.com/follow/live/{房间号}、主播主页 douyin.com/user/{sec_uid}、webcast.amemv.com 回流链接、v.douyin.com 短链或纯房间号' };
@@ -499,9 +499,19 @@ function registerIpc() {
     if (s.links.some((l) => l.url === url)) {
       return { ok: false, error: '该链接已存在' };
     }
-    const link = { id: crypto.randomUUID(), url };
+    const link = { id: crypto.randomUUID(), url, note: cleanNote(rawNote) };
     saveSettings({ links: [...s.links, link] });
     return { ok: true, link, settings: settings };
+  });
+
+  ipcMain.handle('links:setNote', (_e, linkId, rawNote) => {
+    const id = String(linkId);
+    const s = loadSettings();
+    const link = s.links.find((l) => l.id === id);
+    if (!link) return { ok: false, error: '链接不存在' };
+    link.note = cleanNote(rawNote);
+    saveSettings({ links: s.links });
+    return { ok: true, settings: settings };
   });
 
   ipcMain.handle('links:remove', (_e, linkId) => {
@@ -511,6 +521,10 @@ function registerIpc() {
     saveSettings({ links: s.links.filter((l) => l.id !== id) });
     return { ok: true, settings: settings };
   });
+}
+
+function cleanNote(raw) {
+  return String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 100);
 }
 
 function normalizeLiveUrl(raw) {

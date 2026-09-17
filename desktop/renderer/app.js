@@ -129,7 +129,18 @@ function renderLinks() {
     node.dataset.id = link.id;
 
     const running = isRunningState(rt.state);
-    node.querySelector('.link-url').textContent = link.url;
+    const title = node.querySelector('.link-title');
+    const urlEl = node.querySelector('.link-url');
+    if (link.note) {
+      title.textContent = link.note;
+      title.classList.remove('no-note');
+      urlEl.textContent = link.url;
+      urlEl.classList.remove('hidden');
+    } else {
+      title.textContent = link.url;
+      title.classList.add('no-note');
+      urlEl.classList.add('hidden');
+    }
     const roomPrefix = rt.room ? `房间 ${rt.room} · ` : '';
     node.querySelector('.link-detail').textContent = roomPrefix + (rt.detail || defaultDetail(rt.state));
     node.querySelector('.dot').className = `dot ${rt.state}`;
@@ -157,6 +168,7 @@ function renderLinks() {
       }
     });
     toggle.addEventListener('click', () => onToggle(link));
+    node.querySelector('.act-note').addEventListener('click', () => startNoteEdit(node, link));
     node.querySelector('.act-remove').addEventListener('click', () => onRemove(link));
 
     list.appendChild(node);
@@ -208,6 +220,64 @@ async function onRemove(link) {
     state.runtime.delete(link.id);
     renderLinks();
   }
+}
+
+/* 备注编辑：把标题行换成内联输入框，Enter/保存 提交，Esc/取消 还原 */
+function startNoteEdit(node, link) {
+  const main = node.querySelector('.link-main');
+  const title = main.querySelector('.link-title');
+  const urlEl = main.querySelector('.link-url');
+  const detail = main.querySelector('.link-detail');
+  const logBox = main.querySelector('.logbox');
+
+  const editor = document.createElement('div');
+  editor.className = 'row tight note-editor';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = link.note || '';
+  input.maxLength = 100;
+  input.placeholder = '备注（主播名/用途，留空即清除）';
+  input.spellcheck = false;
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn small success';
+  saveBtn.textContent = '保存';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn small ghost';
+  cancelBtn.textContent = '取消';
+
+  const close = () => renderLinks();
+
+  const save = async () => {
+    const res = await window.api.linksSetNote(link.id, input.value);
+    if (res.ok) {
+      state.settings = res.settings;
+      renderLinks();
+    } else {
+      alert(res.error || '保存失败');
+    }
+  };
+
+  saveBtn.addEventListener('click', save);
+  cancelBtn.addEventListener('click', close);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      save();
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  });
+
+  editor.append(input, saveBtn, cancelBtn);
+  main.insertBefore(editor, title);
+  title.classList.add('hidden');
+  urlEl.classList.add('hidden');
+  detail.classList.add('hidden');
+  if (logBox) logBox.classList.add('hidden');
+  input.focus();
+  input.select();
 }
 
 /* ------------------------------------------------ events from main */
@@ -320,10 +390,12 @@ for (const id of ['downloadPath', 'pollInterval', 'maxDuration', 'chunkSize', 'i
 $('#addForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const input = $('#linkInput');
-  const res = await window.api.linksAdd(input.value);
+  const noteInput = $('#noteInput');
+  const res = await window.api.linksAdd(input.value, noteInput.value);
   $('#addError').textContent = res.ok ? '' : res.error;
   if (res.ok) {
     input.value = '';
+    noteInput.value = '';
     state.settings = res.settings;
     renderLinks();
   }
