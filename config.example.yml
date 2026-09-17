@@ -112,11 +112,14 @@ comments:
   max_comments: 0   # 0 = 不限
   page_size: 20
 
-# 直播录制（可选）：当 link 指向 live.douyin.com/{room_id} 或 /follow/live/{room_id} 时生效
+# 直播录制（可选）：当 link 指向 live.douyin.com/{room_id} 或 /follow/live/{room_id} 时生效；
+# link 填主播主页（douyin.com/user/{sec_uid}）且 mode 含 live 时，按 poll_interval_seconds
+# 轮询主页检测开播，开播自动录制。
 live:
   max_duration_seconds: 0   # 0 = 录到主播下播
   chunk_size: 65536
   idle_timeout_seconds: 30
+  poll_interval_seconds: 60 # 开播状态轮询间隔（下限 15s）
 
 # 下载完成通知（可选）。providers 支持 bark / telegram / webhook
 notifications:
