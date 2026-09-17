@@ -267,7 +267,27 @@ async def main_async(args):
         display.print_success("Database initialized")
 
     urls = config.get_links()
+
+    # mode: live —— 主播主页/短链进入开播监听（见 core.live_watcher），
+    # 其余链接照常批量下载。live 不是 user_modes 的下载模式，先从模式列表滤掉，
+    # 避免 UserDownloader 收到未知模式。
+    modes = [str(m or "").strip() for m in (config.get("mode") or [])]
+    live_watch_requested = "live" in modes
+    if live_watch_requested:
+        config.update(mode=[m for m in modes if m != "live"])
+
+    download_urls = []
+    watch_urls = []
+    for url in urls:
+        url_type = (URLParser.parse(url) or {}).get("type")
+        if live_watch_requested and url_type in ("user", "short"):
+            watch_urls.append(url)
+        else:
+            download_urls.append(url)
+
     display.print_info(f"Found {len(urls)} URL(s) to process")
+    if watch_urls:
+        display.print_info(f"{len(watch_urls)} 个链接进入直播监听（mode: live）")
 
     all_results = []
     progress_config = config.get("progress", {}) or {}
@@ -278,9 +298,9 @@ async def main_async(args):
         # 默认静默控制台日志，下载完成后再恢复。
         set_console_log_level(logging.CRITICAL)
 
-    display.start_download_session(len(urls))
+    display.start_download_session(len(download_urls))
     try:
-        for i, url in enumerate(urls, 1):
+        for i, url in enumerate(download_urls, 1):
             display.start_url(i, len(urls), url)
 
             result = await _run_with_relogin(
@@ -306,6 +326,11 @@ async def main_async(args):
         if quiet_progress_logs:
             set_console_log_level(logging.ERROR)
 
+    if watch_urls:
+        # 监听模式是常驻流程：阻塞直到 Ctrl+C 或所有监听目标退出（如登录失效）
+        await _run_live_watchers(watch_urls, config, cookie_manager)
+        return
+
     if all_results:
         from core.downloader_base import DownloadResult
 
@@ -324,6 +349,66 @@ async def main_async(args):
     else:
         # 所有链接都失败时，也发通知（若启用）
         await _dispatch_notifications(config, None, len(urls))
+
+
+async def _run_live_watchers(
+    watch_urls: list, config: ConfigLoader, cookie_manager: CookieManager
+) -> None:
+    """并发监听 link + mode:[live] 的目标（core.live_watcher），直到外部中断。"""
+    from core.live_watcher import LoginRequiredInterrupt, poll_interval_from_config, watch_live
+
+    interval = poll_interval_from_config(config.get("live"))
+
+    def make_event_handler(url_label: str):
+        def _handle(event: dict) -> None:
+            kind = event.get("event")
+            detail = str(event.get("detail") or "")
+            hint = str(event.get("hint") or "")
+            room = event.get("room_id")
+            prefix = f"[直播监听] {url_label}"
+            if kind == "live_detected":
+                display.print_success(f"{prefix} 检测到开播（房间 {room}），开始录制")
+            elif kind == "finished":
+                display.print_success(f"{prefix} {detail}")
+            elif kind == "error":
+                display.print_error(f"{prefix} {detail}" + (f"（{hint}）" if hint else ""))
+            elif kind == "login_required":
+                display.print_error(f"{prefix} {detail}，监听已停止")
+            elif kind == "starting":
+                mode = event.get("mode")
+                display.print_info(
+                    f"{prefix} 开始监听（{'主页模式' if mode == 'account' else '房间模式'}，"
+                    f"每 {interval:.0f}s 检查一次）"
+                )
+            # waiting / checking 高频事件只走日志，避免刷屏
+            elif kind in ("waiting", "checking"):
+                logger.info("%s %s", prefix, detail)
+
+        return _handle
+
+    async def _watch(url: str) -> None:
+        async def download_fn(target: str):
+            try:
+                return await download_url(target, config, cookie_manager, None)
+            except LoginRequiredError as exc:
+                raise LoginRequiredInterrupt(str(exc)) from exc
+
+        await watch_live(
+            url,
+            download_fn=download_fn,
+            cookies=cookie_manager.get_cookies(),
+            proxy=str(config.get("proxy") or ""),
+            poll_interval_seconds=interval,
+            on_event=make_event_handler(url),
+        )
+
+    results = await asyncio.gather(*(_watch(url) for url in watch_urls), return_exceptions=True)
+    for url, result in zip(watch_urls, results):
+        if isinstance(result, BaseException) and not isinstance(
+            result, (asyncio.CancelledError, LoginRequiredInterrupt)
+        ):
+            logger.error("Live watcher crashed: %s", url, exc_info=result)
+            display.print_error(f"[直播监听] {url} 异常退出：{result}")
 
 
 async def _run_discovery_subcommand(

@@ -111,11 +111,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_comments": 0,  # 0 = 不限
         "page_size": 20,
     },
-    # 直播录制（可选）。由 live.douyin.com / /follow/live/ 链接触发。
+    # 直播录制（可选）。由 live.douyin.com / /follow/live/ 链接触发；
+    # 主播主页链接 + mode: live 时按 poll_interval_seconds 轮询主页检测开播。
     "live": {
         "max_duration_seconds": 0,  # 0 = 直到流结束
         "chunk_size": 65536,
         "idle_timeout_seconds": 30,
+        "poll_interval_seconds": 60,  # 开播状态轮询间隔（下限 15s）
     },
     # REST API 服务模式（可选，需 fastapi + uvicorn）。
     "server": {

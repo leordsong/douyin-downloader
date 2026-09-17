@@ -305,10 +305,29 @@ live:
   max_duration_seconds: 3600   # 0 = 录到主播下播
   chunk_size: 65536
   idle_timeout_seconds: 30
+  poll_interval_seconds: 60    # 开播状态轮询间隔（下限 15s）
 ```
 
 录制的 FLV 会保存在 `Downloaded/{作者}/live/` 下，并附带 `*_room.json` 直播间元数据快照。
 主播下播、网络空闲或 Ctrl+C 中断时，**已录制的字节会被保留**（.tmp 文件自动提升为正式文件）。
+
+#### 按主播账号监听开播（link + mode: live）
+
+`link` 填主播主页、`mode` 含 `live` 时进入监听模式：每轮拉取主页，从头像区检测
+开播状态（开播时头像外层会出现带直播间链接的锚点），开播自动录制，下播后继续监听；
+多个主页链接并发监听。`mode` 里其余模式（如 post）照常先下载：
+
+```yaml
+link:
+  - https://www.douyin.com/user/MS4wLjABAAAAxxxx
+mode:
+  - live                       # 只监听直播；与 post 混用时先下载作品再进入监听
+live:
+  poll_interval_seconds: 60    # 每多少秒检查一次开播状态（下限 15s）
+```
+
+注意：监听是常驻流程，进程会一直轮询直到 Ctrl+C。桌面端（`desktop/`）的
+Electron UI 为每个链接起独立监控进程，复用同一套逻辑，支持房间号与主页链接混合并行。
 
 ### 采集作品评论
 
