@@ -51,3 +51,9 @@ config/cookies.json
 .vscode/
 .omc/
 .gstack/
+
+# Electron UI (desktop/)
+desktop/node_modules/
+desktop/data/
+desktop/staging/
+desktop/release/

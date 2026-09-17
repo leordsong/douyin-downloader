@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
+  <title>抖音下载器</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▶</span>
+      <div>
+        <h1>抖音下载器</h1>
+        <p class="subtitle">直播监控录制 · 登录 · 并行下载</p>
+      </div>
+    </div>
+    <div class="env-chips" id="envChips"></div>
+  </header>
+
+  <main class="layout">
+    <!-- 登录 -->
+    <section class="card" id="loginCard">
+      <div class="card-head">
+        <h2>1 · 登录抖音</h2>
+        <span class="chip" id="cookieChip">检测中…</span>
+      </div>
+      <p class="muted" id="loginHint">
+        点击「打开浏览器登录」后会弹出 Chromium 窗口，登录抖音；回到这里点「完成登录」即可保存 Cookies。
+      </p>
+      <div class="row">
+        <button id="btnLogin" class="btn primary">打开浏览器登录</button>
+        <button id="btnLoginConfirm" class="btn success hidden">完成登录</button>
+        <button id="btnLoginCancel" class="btn danger ghost hidden">取消登录</button>
+        <button id="btnDeps" class="btn hidden">安装运行依赖</button>
+        <span class="spinner hidden" id="loginSpinner"></span>
+      </div>
+      <pre class="logbox hidden" id="loginLog"></pre>
+    </section>
+
+    <!-- 设置 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>2 · 下载设置</h2>
+        <span class="saved-flash" id="settingsSaved">已保存 ✓</span>
+      </div>
+      <div class="grid2">
+        <label class="field span2">
+          <span>下载保存目录</span>
+          <div class="row tight">
+            <input type="text" id="downloadPath" spellcheck="false" />
+            <button id="btnBrowse" class="btn">浏览…</button>
+            <button id="btnOpenDir" class="btn ghost">打开目录</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>轮询间隔（秒）<small>未开播时多久检查一次</small></span>
+          <input type="number" id="pollInterval" min="15" step="5" />
+        </label>
+        <label class="field">
+          <span>单次录制上限（秒）<small>0 = 录到主播下播</small></span>
+          <input type="number" id="maxDuration" min="0" step="60" />
+        </label>
+        <label class="field">
+          <span>写入块大小 chunk_size</span>
+          <input type="number" id="chunkSize" min="1024" step="1024" />
+        </label>
+        <label class="field">
+          <span>空闲超时（秒）<small>流卡住多久判定结束</small></span>
+          <input type="number" id="idleTimeout" min="1" step="1" />
+        </label>
+      </div>
+      <p class="muted small">监控中的链接不会因设置变更立即生效，下次启动监控时生效。</p>
+    </section>
+
+    <!-- 直播监听 -->
+    <section class="card">
+      <div class="card-head">
+        <h2>3 · 直播监听</h2>
+        <div class="row tight">
+          <button id="btnStartAll" class="btn success">全部开始</button>
+          <button id="btnStopAll" class="btn danger">全部停止</button>
+        </div>
+      </div>
+      <form class="row tight" id="addForm">
+        <input type="text" id="linkInput" placeholder="粘贴直播间链接：https://live.douyin.com/123456、douyin.com/follow/live/123456，或主播主页 douyin.com/user/…（也可直接填房间号）"
+               spellcheck="false" autocomplete="off" />
+        <button type="submit" class="btn primary">添加</button>
+      </form>
+      <p class="muted small" id="addError"></p>
+      <ul class="link-list" id="linkList"></ul>
+      <p class="muted empty hidden" id="emptyLinks">还没有直播链接，粘贴上面任意形式的直播间地址添加即可。每个链接一个独立监控进程，开播自动录制，互不阻塞。</p>
+    </section>
+  </main>
+
+  <template id="linkRowTpl">
+    <li class="link-row">
+      <span class="dot"></span>
+      <div class="link-main">
+        <div class="link-url"></div>
+        <div class="link-detail muted small"></div>
+        <pre class="logbox small hidden"></pre>
+      </div>
+      <div class="link-actions">
+        <span class="state-label"></span>
+        <button class="btn small act-toggle">开始</button>
+        <button class="btn small ghost act-log">日志</button>
+        <button class="btn small ghost danger act-remove">删除</button>
+      </div>
+    </li>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
