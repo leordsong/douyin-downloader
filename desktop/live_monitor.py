@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 import time
@@ -42,7 +43,7 @@ from core.live_watcher import (  # noqa: E402
     resolve_watch_target,
     watch_live,
 )
-from utils.logger import setup_logger  # noqa: E402
+from utils.logger import set_console_log_level, setup_logger  # noqa: E402
 
 logger = setup_logger("LiveMonitor")
 
@@ -171,6 +172,8 @@ def make_event_adapter(room_id_of_target: str) -> Any:
 
 
 async def run_monitor(args: argparse.Namespace) -> int:
+    # Includes stream-ended / payload-ended / idle-timeout reasons in desktop logs.
+    set_console_log_level(logging.INFO)
     url = args.url.strip()
     config = ConfigLoader(args.config)
 

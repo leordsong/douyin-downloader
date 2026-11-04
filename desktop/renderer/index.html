@@ -72,6 +72,18 @@
         </label>
       </div>
       <p class="muted small">监控中的链接不会因设置变更立即生效，下次启动监控时生效。</p>
+      <form class="row" id="cleanupForm">
+        <label for="cleanupDays">清空</label>
+        <input type="number" id="cleanupDays" min="1" max="36500" step="1" value="7" required aria-label="保留最近多少天的下载" />
+        <span>天前的下载</span>
+        <label class="row tight"><input type="checkbox" id="autoCleanup" />自动清理</label>
+        <label class="row tight"><input type="checkbox" id="directDelete" />直接删除（共享网盘适用，不进本机回收站）</label>
+        <button type="submit" id="btnCleanup" class="btn danger">清理旧下载…</button>
+      </form>
+      <p class="muted small">按最后修改时间计算，包含当前下载目录的子目录；已完成媒体文件移入回收站，保留正在录制的临时文件。清理不影响持续监控。</p>
+      <p class="muted small">勾选后立即检查，每次录制完成后清理；应用启动和运行期间每小时也会检查。自动清理不再逐次确认，关闭应用后不执行。</p>
+      <p class="muted small" id="cleanupResult" role="status" aria-live="polite"></p>
+      <button type="button" id="btnOpenLogs" class="btn ghost">打开日志目录</button>
     </section>
 
     <!-- 直播监听 -->

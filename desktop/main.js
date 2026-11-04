@@ -3,6 +3,7 @@ const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { cutoffForDays, scanDownloads, trashDownloads } = require('./download_cleanup');
 
 const IS_WIN = process.platform === 'win32';
 // userData 固定用 ASCII 目录名，避免中文路径影响 venv / uv / playwright
@@ -24,6 +25,7 @@ const BACKEND_DIR = app.isPackaged
   : DEV_ROOT;
 const DATA_DIR = app.isPackaged ? app.getPath('userData') : path.join(__dirname, 'data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
 const CONFIG_YML = path.join(BACKEND_DIR, 'config.yml');
 const COOKIES_JSON = path.join(BACKEND_DIR, 'config', 'cookies.json');
 const MONITOR_SCRIPT = path.join(BACKEND_DIR, 'desktop', 'live_monitor.py');
@@ -38,10 +40,26 @@ let loginChild = null;
 let depsChild = null;
 const monitors = new Map(); // linkId -> { child, state, killTimer }
 let cachedUvPath = null;
+let cleanupRunning = false;
+let logWrites = Promise.resolve();
+
+function writeLog(channel, payload) {
+  // Serialize appends without blocking recording or cleanup. Strip URL query credentials.
+  const text = JSON.stringify(payload).replace(/https?:[^\s"<>]+/g, (value) => value.split('?')[0]);
+  const line = `${new Date().toISOString()} ${channel} ${text}\n`;
+  const file = path.join(LOG_DIR, `${new Date().toISOString().slice(0, 10)}.log`);
+  logWrites = logWrites.then(async () => {
+    await fs.promises.mkdir(LOG_DIR, { recursive: true });
+    await fs.promises.appendFile(file, line, 'utf8');
+  }).catch((err) => console.error('日志写入失败', err.message));
+}
 
 // ---------------------------------------------------------------- utilities
 
 function send(channel, payload) {
+  if (channel.startsWith('monitor:') || channel === 'downloads:cleanupResult') {
+    writeLog(channel, payload);
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.send(channel, payload);
   }
@@ -59,6 +77,9 @@ function defaultDownloadPath() {
 function defaultSettings() {
   return {
     downloadPath: defaultDownloadPath(),
+    autoCleanup: false,
+    directDelete: false,
+    cleanupDays: 7,
     pollIntervalSeconds: 60,
     live: {
       maxDurationSeconds: 0, // 0 = 录到主播下播
@@ -88,6 +109,13 @@ function loadSettings() {
 }
 
 function saveSettings(next) {
+  if (next.cleanupDays !== undefined) cutoffForDays(next.cleanupDays);
+  if (next.autoCleanup !== undefined && typeof next.autoCleanup !== 'boolean') {
+    throw new Error('自动清理开关必须为布尔值');
+  }
+  if (next.directDelete !== undefined && typeof next.directDelete !== 'boolean') {
+    throw new Error('直接删除开关必须为布尔值');
+  }
   const current = loadSettings();
   settings = {
     ...defaultSettings(),
@@ -392,9 +420,7 @@ function startMonitor(linkId) {
     if (stream === 'stdout' && line.startsWith('[DW_EVENT] ')) {
       try {
         const event = JSON.parse(line.slice('[DW_EVENT] '.length));
-        const entry = monitors.get(linkId);
-        if (entry && event.state) entry.state = event.state;
-        send('monitor:event', { linkId, event });
+        handleMonitorEvent(linkId, event);
       } catch {
         send('monitor:log', { linkId, stream, line });
       }
@@ -411,6 +437,14 @@ function startMonitor(linkId) {
   return { ok: true };
 }
 
+function handleMonitorEvent(linkId, event) {
+  const entry = monitors.get(linkId);
+  if (entry && event.state) entry.state = event.state;
+  send('monitor:event', { linkId, event });
+  // Each completed recording triggers retention cleanup without stopping any monitor.
+  if (event.state === 'finished') setImmediate(() => runAutoCleanup());
+}
+
 function stopMonitorEntry(linkId, code) {
   const entry = monitors.get(linkId);
   monitors.delete(linkId);
@@ -419,6 +453,7 @@ function stopMonitorEntry(linkId, code) {
   }
   send('monitor:exit', { linkId, code });
   send('env:changed', envStatus());
+  if (!monitors.size) setImmediate(() => runAutoCleanup());
 }
 
 function requestStopMonitor(linkId) {
@@ -453,11 +488,76 @@ function requestStopMonitor(linkId) {
 
 // ---------------------------------------------------------------- ipc
 
+async function cleanupDownloads(days, automatic = false) {
+  if (cleanupRunning) return { ok: false, error: '清理正在进行中' };
+  cleanupRunning = true;
+  try {
+    const directory = loadSettings().downloadPath;
+    const directDelete = loadSettings().directDelete === true;
+    const action = directDelete ? '直接删除（不经过本机回收站）' : '移入回收站';
+    const plan = await scanDownloads(directory, days);
+    if (!plan.files.length) {
+      const result = { ok: true, count: 0, bytes: 0, skipped: 0, errors: plan.errors };
+      if (plan.errors.length) writeLog('downloads:cleanup', { directory, days, ...result });
+      return result;
+    }
+    if (automatic) {
+      const current = loadSettings();
+      if (!current.autoCleanup || current.cleanupDays !== days || current.downloadPath !== directory ||
+          (current.directDelete === true) !== directDelete) {
+        return { ok: true, canceled: true };
+      }
+    } else {
+      const answer = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: '清空旧下载',
+        message: `${action} ${days} 天前的 ${plan.files.length} 个媒体文件？`,
+        detail: `下载目录：${plan.root}\n共 ${(plan.bytes / 1024 / 1024).toFixed(2)} MB。\n按最后修改时间计算（每一天为 24 小时），包含子目录；保留临时文件和其他文件。`,
+        buttons: ['取消', action],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      if (answer.response !== 1) return { ok: true, canceled: true };
+    }
+    const result = { ok: true, directDelete, ...await trashDownloads(plan,
+      (target) => directDelete ? fs.promises.unlink(target) : shell.trashItem(target)) };
+    writeLog('downloads:cleanup', { directory, days, automatic, ...result });
+    return result;
+  } catch (err) {
+    writeLog('downloads:cleanupError', { error: err.message, code: err.code });
+    return { ok: false, error: err.message };
+  } finally {
+    cleanupRunning = false;
+  }
+}
+
+async function runAutoCleanup() {
+  const current = loadSettings();
+  if (!current.autoCleanup || cleanupRunning) return;
+  const result = await cleanupDownloads(current.cleanupDays, true);
+  if (!result.canceled) send('downloads:cleanupResult', result);
+}
+
 function registerIpc() {
+  ipcMain.handle('logs:open', async () => {
+    await fs.promises.mkdir(LOG_DIR, { recursive: true });
+    const error = await shell.openPath(LOG_DIR);
+    return error ? { ok: false, error } : { ok: true };
+  });
+  ipcMain.handle('downloads:cleanup', (_e, days) => cleanupDownloads(days));
   ipcMain.handle('env:status', () => envStatus());
 
   ipcMain.handle('settings:get', () => loadSettings());
-  ipcMain.handle('settings:set', (_e, patch) => saveSettings(patch || {}));
+  ipcMain.handle('settings:set', (_e, patch) => {
+    const previous = loadSettings();
+    const next = saveSettings(patch || {});
+    if (next.autoCleanup && (!previous.autoCleanup || previous.cleanupDays !== next.cleanupDays ||
+        previous.downloadPath !== next.downloadPath || previous.directDelete !== next.directDelete)) {
+      setImmediate(() => runAutoCleanup());
+    }
+    return next;
+  });
 
   ipcMain.handle('dialog:chooseDownloadDir', async () => {
     const res = await dialog.showOpenDialog(mainWindow, {
@@ -616,6 +716,10 @@ if (!gotLock) {
     const bootstrap = ensureBackend();
     registerIpc();
     createWindow();
+    // Also triggered by completed recordings; monitors keep running during cleanup.
+    const cleanupTimer = setInterval(() => runAutoCleanup(), 60 * 60 * 1000);
+    cleanupTimer.unref();
+    setTimeout(() => runAutoCleanup(), 2000).unref();
 
     // 首次启动 / 版本更新后自动补齐后端依赖：uv sync --extra browser + chromium
     if (bootstrap.needsSync) {

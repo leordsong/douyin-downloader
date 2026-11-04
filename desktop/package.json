@@ -1,13 +1,14 @@
 {
   "name": "douyin-downloader-desktop",
   "productName": "抖音下载器",
-  "version": "1.3.0",
+  "version": "1.5.0",
   "description": "Electron UI wrapping douyin-downloader: cookie login + parallel live recording",
   "main": "main.js",
   "author": "Leo Song",
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node --test tests/*.test.js",
     "smoke": "DW_SMOKE=1 electron .",
     "prepare-dist": "node scripts/prepare-dist.js",
     "dist": "npm run prepare-dist && electron-builder --win",
@@ -26,6 +27,7 @@
     },
     "files": [
       "main.js",
+      "download_cleanup.js",
       "preload.js",
       "renderer/**/*",
       "package.json",

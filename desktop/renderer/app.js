@@ -83,6 +83,7 @@ function renderEnv() {
 let saveTimer = null;
 function queueSave() {
   clearTimeout(saveTimer);
+  if (!$('#cleanupDays').checkValidity()) return;
   saveTimer = setTimeout(async () => {
     await window.api.setSettings(collectSettings());
     $('#settingsSaved').classList.add('show');
@@ -97,6 +98,9 @@ function collectSettings() {
   };
   return {
     downloadPath: $('#downloadPath').value.trim(),
+    autoCleanup: $('#autoCleanup').checked,
+    directDelete: $('#directDelete').checked,
+    cleanupDays: Number($('#cleanupDays').value),
     pollIntervalSeconds: num($('#pollInterval').value, 60, 15),
     live: {
       maxDurationSeconds: num($('#maxDuration').value, 0),
@@ -107,6 +111,9 @@ function collectSettings() {
 }
 
 function fillSettings(s) {
+  $('#directDelete').checked = Boolean(s.directDelete);
+  $('#autoCleanup').checked = Boolean(s.autoCleanup);
+  $('#cleanupDays').value = s.cleanupDays || 7;
   $('#downloadPath').value = s.downloadPath || '';
   $('#pollInterval').value = s.pollIntervalSeconds;
   $('#maxDuration').value = s.live.maxDurationSeconds;
@@ -282,6 +289,24 @@ function startNoteEdit(node, link) {
 
 /* ------------------------------------------------ events from main */
 
+function showCleanupResult(res, automatic = false) {
+  const result = $('#cleanupResult');
+  const prefix = automatic ? '自动清理：' : '';
+  if (!res.ok) result.textContent = prefix + res.error;
+  else if (res.canceled) result.textContent = '已取消清理';
+  else {
+    result.textContent = prefix + (res.count
+      ? `已${res.directDelete ? '直接删除' : '移入回收站'} ${res.count} 个文件，共 ${(res.bytes / 1024 / 1024).toFixed(2)} MB。`
+      : '没有清理任何文件。');
+    if (res.skipped) result.textContent += ` 跳过 ${res.skipped} 个已改变或不存在的文件。`;
+    if (res.errors.length) {
+      result.textContent += ` ${res.errors.length} 项处理失败：${res.errors[0].path}（${res.errors[0].error}）`;
+    }
+  }
+}
+
+window.api.on('downloads:cleanupResult', (res) => showCleanupResult(res, true));
+
 window.api.on('env:changed', (env) => {
   state.env = env;
   // 进程退出等被动变化需要同步到对应链接的运行态
@@ -383,7 +408,42 @@ $('#btnBrowse').addEventListener('click', async () => {
 
 $('#btnOpenDir').addEventListener('click', () => window.api.openPath($('#downloadPath').value.trim()));
 
-for (const id of ['downloadPath', 'pollInterval', 'maxDuration', 'chunkSize', 'idleTimeout']) {
+$('#cleanupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const days = Number($('#cleanupDays').value);
+  if (!$('#cleanupDays').reportValidity()) return;
+  const button = $('#btnCleanup');
+  const result = $('#cleanupResult');
+  button.disabled = true;
+  result.textContent = '正在扫描下载目录…';
+  try {
+    // Flush pending edits so cleanup always uses the directory currently displayed.
+    clearTimeout(saveTimer);
+    await window.api.setSettings(collectSettings());
+    const res = await window.api.cleanupDownloads(days);
+    showCleanupResult(res);
+  } catch (err) {
+    result.textContent = `清理失败：${err.message}`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#autoCleanup').addEventListener('change', () => {
+  if (!$('#cleanupDays').reportValidity()) {
+    $('#autoCleanup').checked = false;
+    return;
+  }
+  queueSave();
+});
+
+$('#directDelete').addEventListener('change', queueSave);
+$('#btnOpenLogs').addEventListener('click', async () => {
+  const res = await window.api.openLogs();
+  if (!res.ok) $('#cleanupResult').textContent = res.error;
+});
+
+for (const id of ['downloadPath', 'pollInterval', 'maxDuration', 'chunkSize', 'idleTimeout', 'cleanupDays']) {
   $('#' + id).addEventListener('input', queueSave);
 }
 

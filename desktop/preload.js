@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // 渲染层可用的白名单 API：所有能力都走显式命名通道，
 // 事件类订阅返回取消函数，避免重复注册。
 const EVENTS = [
+  'downloads:cleanupResult',
   'env:changed',
   'login:state',
   'login:log',
@@ -15,12 +16,14 @@ const EVENTS = [
 
 contextBridge.exposeInMainWorld('api', {
   envStatus: () => ipcRenderer.invoke('env:status'),
+  openLogs: () => ipcRenderer.invoke('logs:open'),
 
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
 
   chooseDownloadDir: () => ipcRenderer.invoke('dialog:chooseDownloadDir'),
   openPath: (target) => ipcRenderer.invoke('app:openPath', target),
+  cleanupDownloads: (days) => ipcRenderer.invoke('downloads:cleanup', days),
 
   loginStart: () => ipcRenderer.invoke('login:start'),
   loginConfirm: () => ipcRenderer.invoke('login:confirm'),
