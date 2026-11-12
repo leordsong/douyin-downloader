@@ -299,6 +299,7 @@ function showCleanupResult(res, automatic = false) {
       ? `已${res.directDelete ? '直接删除' : '移入回收站'} ${res.count} 个文件，共 ${(res.bytes / 1024 / 1024).toFixed(2)} MB。`
       : '没有清理任何文件。');
     if (res.skipped) result.textContent += ` 跳过 ${res.skipped} 个已改变或不存在的文件。`;
+    if (res.directories) result.textContent += ` 已删除 ${res.directories} 个空目录。`;
     if (res.errors.length) {
       result.textContent += ` ${res.errors.length} 项处理失败：${res.errors[0].path}（${res.errors[0].error}）`;
     }

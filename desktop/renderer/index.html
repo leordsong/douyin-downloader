@@ -80,7 +80,7 @@
         <label class="row tight"><input type="checkbox" id="directDelete" />直接删除（共享网盘适用，不进本机回收站）</label>
         <button type="submit" id="btnCleanup" class="btn danger">清理旧下载…</button>
       </form>
-      <p class="muted small">按最后修改时间计算，包含当前下载目录的子目录；已完成媒体文件移入回收站，保留正在录制的临时文件。清理不影响持续监控。</p>
+      <p class="muted small">按最后修改时间清理过期媒体和直播 _room.json，并删除空目录；直接删除模式不进回收站。保留正在录制的临时文件，清理不影响持续监控。</p>
       <p class="muted small">勾选后立即检查，每次录制完成后清理；应用启动和运行期间每小时也会检查。自动清理不再逐次确认，关闭应用后不执行。</p>
       <p class="muted small" id="cleanupResult" role="status" aria-live="polite"></p>
       <button type="button" id="btnOpenLogs" class="btn ghost">打开日志目录</button>

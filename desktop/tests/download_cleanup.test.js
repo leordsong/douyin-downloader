@@ -123,3 +123,53 @@ test('missing download directory is empty; relative and disk root paths are reje
   await assert.rejects(scanDownloads('relative', 7), /绝对/);
   await assert.rejects(scanDownloads(path.parse(root).root, 7), /根目录/);
 });
+
+test('cleans expired recording JSON and prunes all empty ancestors but keeps download root', async (t) => {
+  const { root, write } = await fixture(t);
+  const base = '欧墨拆卡（电疗版）/live/2026-11-04_1909_感谢支持_38208487874/recording';
+  await write(base + '.flv');
+  await write(base + '_room.json');
+  const plan = await scanDownloads(root, 7);
+  const result = await trashDownloads(plan, (target) => fs.unlink(target));
+  assert.equal(result.count, 2);
+  assert.equal(result.directories, 3);
+  assert.deepEqual(await fs.readdir(root), []);
+});
+
+test('cleans orphan room JSON left by earlier cleanup; preserves unrelated and recent JSON', async (t) => {
+  const { root, write } = await fixture(t);
+  await write('orphan/live/old/recording_room.json');
+  const unrelated = await write('keep/metadata.json');
+  const recent = await write('keep/recent_room.json', 1);
+  const result = await trashDownloads(await scanDownloads(root, 7), (target) => fs.unlink(target));
+  assert.equal(result.count, 1);
+  assert.equal(result.directories, 3);
+  assert.equal((await fs.stat(unrelated)).isFile(), true);
+  assert.equal((await fs.stat(recent)).isFile(), true);
+});
+
+test('preserves metadata for active, recent or unsuccessfully deleted media', async (t) => {
+  const { root, write } = await fixture(t);
+  for (const name of ['active', 'recent', 'failed']) await write(name + '_room.json');
+  await write('active.flv.tmp');
+  await write('recent.flv', 1);
+  await write('failed.flv');
+  const result = await trashDownloads(await scanDownloads(root, 7), async () => {
+    throw new Error('locked');
+  });
+  assert.equal(result.count, 0);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.skipped, 3);
+});
+
+test('keeps candidate directories if a concurrent recording creates a file', async (t) => {
+  const { root, write } = await fixture(t);
+  await write('author/live/session/old_room.json');
+  const plan = await scanDownloads(root, 7);
+  await write('author/live/session/new.flv.tmp', 0);
+  const result = await trashDownloads(plan, (target) => fs.unlink(target));
+  assert.equal(result.count, 1);
+  assert.equal(result.directories, 0);
+  assert.deepEqual(result.errors, []);
+  assert.equal((await fs.stat(path.join(root, 'author/live/session/new.flv.tmp'))).isFile(), true);
+});

@@ -496,7 +496,7 @@ async function cleanupDownloads(days, automatic = false) {
     const directDelete = loadSettings().directDelete === true;
     const action = directDelete ? '直接删除（不经过本机回收站）' : '移入回收站';
     const plan = await scanDownloads(directory, days);
-    if (!plan.files.length) {
+    if (!plan.files.length && !(plan.directories || []).length) {
       const result = { ok: true, count: 0, bytes: 0, skipped: 0, errors: plan.errors };
       if (plan.errors.length) writeLog('downloads:cleanup', { directory, days, ...result });
       return result;
@@ -511,8 +511,8 @@ async function cleanupDownloads(days, automatic = false) {
       const answer = await dialog.showMessageBox(mainWindow, {
         type: 'warning',
         title: '清空旧下载',
-        message: `${action} ${days} 天前的 ${plan.files.length} 个媒体文件？`,
-        detail: `下载目录：${plan.root}\n共 ${(plan.bytes / 1024 / 1024).toFixed(2)} MB。\n按最后修改时间计算（每一天为 24 小时），包含子目录；保留临时文件和其他文件。`,
+        message: `${action} ${days} 天前的 ${plan.files.length} 个媒体及直播 JSON 文件？`,
+        detail: `下载目录：${plan.root}\n共 ${(plan.bytes / 1024 / 1024).toFixed(2)} MB。\n按最后修改时间计算（每一天为 24 小时），包含子目录；清理后删除空目录，保留临时文件和其他文件。`,
         buttons: ['取消', action],
         defaultId: 0,
         cancelId: 0,
