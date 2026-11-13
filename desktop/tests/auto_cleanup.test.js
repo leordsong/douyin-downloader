@@ -12,7 +12,7 @@ function harness(stored = {}, overrides = {}) {
   const scheduled = [];
   const calls = { scans: 0, trashes: 0, dialogs: 0, saved: null, unlinks: [], recycled: [] };
   const electron = {
-    app: { isPackaged: false, requestSingleInstanceLock: () => false, quit() {} },
+    app: { isPackaged: false, requestSingleInstanceLock: () => false, quit() {}, disableHardwareAcceleration() {} },
     ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
     dialog: { showMessageBox: async () => { calls.dialogs += 1; return { response: 0 }; } },
     shell: { trashItem: async (target) => calls.recycled.push(target) },

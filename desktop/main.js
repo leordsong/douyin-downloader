@@ -9,6 +9,10 @@ const IS_WIN = process.platform === 'win32';
 // userData 固定用 ASCII 目录名，避免中文路径影响 venv / uv / playwright
 const APP_DATA_NAME = 'douyin-downloader-ui';
 
+// 服务器环境通常没有 GPU，且 RDP 断开/重连会让 GPU 进程丢失渲染表面导致窗口黑屏。
+// 禁用硬件加速走纯软件渲染，重连后恢复概率大幅提升。
+app.disableHardwareAcceleration();
+
 // ---------------------------------------------------------------- 路径层
 // 开发模式：BACKEND_DIR = 仓库根，UI 直接用仓库里的 .venv / config.yml。
 // 打包模式：只读资源在 process.resourcesPath（python-project/、vendor/uv/），
@@ -52,6 +56,39 @@ function writeLog(channel, payload) {
     await fs.promises.mkdir(LOG_DIR, { recursive: true });
     await fs.promises.appendFile(file, line, 'utf8');
   }).catch((err) => console.error('日志写入失败', err.message));
+}
+
+// ---------------------------------------------------------------- 崩溃/黑屏诊断
+// 服务器无 GPU + RDP 会话切换时窗口可能黑屏，而主进程和监控进程都还活着，
+// 日志里不留痕迹就没法定位。这里把所有进程级异常写进同一个日志文件。
+
+function installCrashLogging() {
+  process.on('uncaughtException', (err) => {
+    writeLog('main:uncaughtException', { message: err.message, stack: err.stack });
+  });
+  process.on('unhandledRejection', (reason) => {
+    writeLog('main:unhandledRejection', { reason: String(reason) });
+  });
+  app.on('child-process-gone', (_event, details) => {
+    // GPU 进程崩溃是黑屏的头号嫌疑；renderer 崩溃则窗口只剩背景色
+    writeLog('child-process-gone', details);
+    if (details.type === 'GPU') {
+      send('monitor:log', { linkId: '-', stream: 'sys', line: `[UI] GPU 进程退出 (${details.reason})，已由 Chromium 自动重启` });
+    }
+  });
+  app.on('render-process-gone', (_event, webContents, details) => {
+    writeLog('render-process-gone', details);
+    if (mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents &&
+        details.reason !== 'clean-exit') {
+      // renderer 挂掉窗口就只剩黑背景，自动重载恢复；监控进程不受影响
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          writeLog('renderer:reload', { trigger: 'render-process-gone' });
+          mainWindow.webContents.reload();
+        }
+      }, 1000);
+    }
+  });
 }
 
 // ---------------------------------------------------------------- utilities
@@ -679,6 +716,20 @@ function createWindow() {
   });
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // 诊断：renderer 卡死 / JS 报错也留痕，黑屏时才有据可查
+  mainWindow.webContents.on('unresponsive', () => {
+    writeLog('renderer:unresponsive', {});
+  });
+  mainWindow.webContents.on('responsive', () => {
+    writeLog('renderer:responsive', {});
+  });
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level >= 2) { // warning 及以上
+      writeLog('renderer:console', { level, message, source: sourceId, line });
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -713,6 +764,7 @@ if (!gotLock) {
   app.setAppUserModelId('com.douyin.downloader.desktop');
 
   app.whenReady().then(async () => {
+    installCrashLogging();
     const bootstrap = ensureBackend();
     registerIpc();
     createWindow();
